@@ -15,7 +15,7 @@ sigma_water = 400e-3;   % S/m, conductivity of water
 sigma_air   = 3e-15;    % S/m, conductivity of air
 
 % Brine temperature
-T_brine_K = 260;        % Kelvin
+T_brine_K = 250;        % Kelvin
 
 %% Example 1: Scattering Efficiency vs Pore Radius
 
@@ -63,6 +63,34 @@ fprintf('\nEa_vec(2:10):\n');
 disp(Ea_vec(2:10)');
 
 fprintf("The refractive index is: %d \n", m)
+
+%
+r_sample_N = 1000;
+r = linspace(1e-3, 1, r_sample_N);
+% Porosity
+phi = [0.01, 0.02, 0.05, 0.1, 0.20];
+
+% Frequencies
+f_1   = 1e6;    % Hz
+f_10  = 10e6;   % Hz
+f_100 = 100e6;  % Hz
+frequencies = [f_1, f_10, f_100];
+freq_labels  = {'1 MHz', '10 MHz', '100 MHz'};
+linestyles   = {'-', '--', ':'};
+
+% ---- Material tables ----
+% For brine: eps_r and sigma are placeholders (computed per-frequency inside loop)
+% sentinel value NaN flags "use brine_parameters()" instead of static values
+materials_epsr = {NaN,         'Brine';
+                  eps_r_water, 'Water';
+                  eps_r_dust,  'Dust';
+                  eps_r_air,   'Air'};
+materials_cond = {NaN,         'Brine';
+                  sigma_water, 'Water';
+                  sigma_dust,  'Dust';
+                  sigma_air,   'Air'};
+
+n_materials = size(materials_epsr, 1);
 
 %% Example 2: Attenuation Rate for Different Materials at Three Frequencies
 % ---- Plot mode ----
@@ -173,57 +201,45 @@ end
 %  X-axis: xi = 2*pi*r/lambda, swept from 1e-3 to 10
 %  For each frequency, physical r is back-computed from xi
 % =============================================================
+normalize_attenuation = false;   % true  → N_a · r  (dB/km · m)
+                                 % false → N_a      (dB/km)
 
 % ---- Sweep in size parameter space ----
 xi_sample_N = 1000;
-xi = logspace(-3, 1, xi_sample_N);   % size parameter, 1e-3 to 10
+xi          = logspace(-3, 1, xi_sample_N);
+phi         = [0.01, 0.02, 0.05, 0.1, 0.20];
 
-% Porosity (reuse from main block)
-% phi = [0.01, 0.02, 0.05, 0.1, 0.20];
-
-% Frequencies / styles (reuse from main block)
-% frequencies, freq_labels, linestyles already defined
-
-figure('Position', [100, 100, 1400, 500]);
+figure('Position', [1000, 500, 1600, 400]);
 colors_xi = lines(length(phi));
 
 for mat_idx = 1:n_materials
-    ax = subplot(1, n_materials, mat_idx);
+    ax        = subplot(1, n_materials, mat_idx);
     title_str = materials_epsr{mat_idx, 2};
 
-    Na_xi_list = cell(1, numel(frequencies));   % Na vs xi, per frequency
+    Na_xi_list     = cell(1, numel(frequencies));
+    lambda_list    = zeros(1, numel(frequencies));   % store lambda per freq
 
     for freq_idx = 1:numel(frequencies)
 
-        % --- Back-compute physical r from xi and lambda ---
-        lambda   = 3e8 / frequencies(freq_idx);        % free-space wavelength (m)
-        r_xi     = xi * lambda / (2 * pi);             % physical radius (m), 1×xi_sample_N
+        % --- Back-compute physical r from xi ---
+        lambda_list(freq_idx) = 3e8 / frequencies(freq_idx);
+        r_xi = xi * lambda_list(freq_idx) / (2 * pi);
 
-        % --- Permittivities ---
-%         if isnan(materials_epsr{mat_idx, 1})
-%             [eps_p, eps_pp] = brine_parameters(T_brine_K, frequencies(freq_idx));
-%             epsp = eps_p - 1j * eps_pp;
-%         else
-%             epsp = materials_epsr{mat_idx, 1} + ...
-%                    compute_imag_permittivity(frequencies(freq_idx), materials_cond{mat_idx, 1});
-%         end
-%         epsb = eps_r_ice + compute_imag_permittivity(frequencies(freq_idx), sigma_ice);
-        % --- SPECIAL CASE: 0 IMANGINARY PERMITTIVITY -------
+        % --- Permittivities (real-only special case) ---
         if isnan(materials_epsr{mat_idx, 1})
-            [eps_p, eps_pp] = brine_parameters(T_brine_K, frequencies(freq_idx));
+            [eps_p, ~] = brine_parameters(T_brine_K, frequencies(freq_idx));
             epsp = eps_p;
         else
             epsp = materials_epsr{mat_idx, 1};
         end
         epsb = eps_r_ice;
-        % --- END OF SPECIAL CASE -------
+
         fprintf("[xi-plot] Material: %s | f = %.0f Hz\n", title_str, frequencies(freq_idx));
         fprintf("  EPSP: %s\n",  num2str(epsp));
         fprintf("  EPSB: %s\n",  num2str(epsb));
         fprintf("  m   : %s\n",  num2str(sqrt(epsp / epsb)));
         fprintf("  r range: [%.3e, %.3e] m\n", r_xi(1), r_xi(end));
 
-        % --- Mie computation on the xi-derived r grid ---
         [Na_xi_list{freq_idx}, ~] = compute_atten_rate(phi, r_xi, frequencies(freq_idx), epsb, epsp);
     end
 
@@ -231,19 +247,26 @@ for mat_idx = 1:n_materials
     hold(ax, 'on');
     for j = 1:length(phi)
         for k = 1:numel(frequencies)
-            Na = Na_xi_list{k};
+            Na      = Na_xi_list{k};
+            r_xi_k  = xi * lambda_list(k) / (2 * pi);   % (m), column after (:)
+
+            if normalize_attenuation
+                y_data = Na(:, j) .* r_xi_k(:);   % N_a · r  (dB/km · m)
+            else
+                y_data = Na(:, j);                 % N_a      (dB/km)
+            end
 
             if k == 1
-                plot(ax, xi, Na(:, j), ...
-                     'Color',     colors_xi(j, :), ...
-                     'LineStyle', linestyles{k}, ...
-                     'LineWidth', 1.5, ...
-                     'DisplayName', sprintf('\\phi=%.2f', phi(j)));
+                plot(ax, xi, y_data, ...
+                     'Color',            colors_xi(j, :), ...
+                     'LineStyle',        linestyles{k}, ...
+                     'LineWidth',        1.5, ...
+                     'DisplayName',      sprintf('\\phi=%.2f', phi(j)));
             else
-                plot(ax, xi, Na(:, j), ...
-                     'Color',     colors_xi(j, :), ...
-                     'LineStyle', linestyles{k}, ...
-                     'LineWidth', 1.5, ...
+                plot(ax, xi, y_data, ...
+                     'Color',            colors_xi(j, :), ...
+                     'LineStyle',        linestyles{k}, ...
+                     'LineWidth',        1.5, ...
                      'HandleVisibility', 'off');
             end
         end
@@ -252,22 +275,29 @@ for mat_idx = 1:n_materials
     % --- Axes config ---
     set(ax, 'XScale', 'log', 'YScale', 'log', 'TickDir', 'in');
     xlim(ax, [1e-3, 10]);
-    ylim(ax, [1e-15, 1e4]);
+    if normalize_attenuation
+        ylim(ax, [1e-5, 1e4]);
+    else
+        ylim(ax, [1e-5, 1e4]);
+    end
     grid(ax, 'on');
     ax.GridLineStyle = '-';
 
-    % Mark the Rayleigh-Mie transition at xi = 1
     xline(ax, 1, '--k', '\xi = 1', ...
           'LabelVerticalAlignment', 'bottom', ...
-          'HandleVisibility', 'off');
+          'HandleVisibility',       'off');
 
     xlabel(ax, 'Size Parameter  \xi = 2\pir/\lambda');
     if mat_idx == 1
-        ylabel(ax, 'Attenuation Rate (dB/km)');
+        if normalize_attenuation
+            ylabel(ax, 'Normalized Attenuation  N_a \cdot r  (dB/km \cdot m)');
+        else
+            ylabel(ax, 'Attenuation Rate  N_a  (dB/km)');
+        end
     end
     title(ax, title_str);
 
-    % Porosity legend
+    % Porosity legend entries (already in legend from k==1 plots above)
     legend(ax, 'Location', 'northwest');
 
     % Frequency dummy lines
@@ -277,12 +307,18 @@ for mat_idx = 1:n_materials
              'LineWidth',  1.5, ...
              'DisplayName', freq_labels{k});
     end
-    legend(ax, 'Location', 'southwest');
+    legend(ax, 'Location', 'northwest');
 
     hold(ax, 'off');
 end
 
-exportgraphics(gcf, 'mie_scattering_xiparam.png', 'Resolution', 300);
+% --- Export with descriptive filename ---
+if normalize_attenuation
+    exportgraphics(gcf, 'mie_xiparam_normalized.png', 'Resolution', 300);
+else
+    exportgraphics(gcf, 'mie_xiparam_raw.png',        'Resolution', 300);
+end
+
 
 
 %% --- Difference Plot: Brine minus Water ---
