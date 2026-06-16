@@ -319,6 +319,257 @@ else
     exportgraphics(gcf, 'mie_xiparam_raw.png',        'Resolution', 300);
 end
 
+%%
+% =========================================================
+% Aesthetics / style config (set once before the mat loop)
+% =========================================================
+plot_scattering_flag = true;
+plot_absorption_flag = true;
+plot_extinction_flag = true;
+
+pub_colors = [
+    0.122, 0.471, 0.706;   % blue
+    0.890, 0.102, 0.110;   % red
+    0.992, 0.553, 0.235;   % orange
+    0.416, 0.239, 0.604;   % purple
+    0.180, 0.627, 0.173;   % green
+];
+pub_linestyles    = {'-', '--', ':'};
+rayleigh_colors   = [
+    0.122, 0.471, 0.706;
+    0.890, 0.102, 0.110;
+    0.180, 0.627, 0.173;
+];
+
+set(groot, 'DefaultAxesFontName',  'Helvetica');
+set(groot, 'DefaultTextFontName',  'Helvetica');
+set(groot, 'DefaultAxesFontSize',  11);
+set(groot, 'DefaultAxesLineWidth', 0.8);
+
+% =========================================================
+% Figure + tiled layout
+% =========================================================
+n_rows = plot_scattering_flag + plot_absorption_flag + plot_extinction_flag;
+
+figure('Position', [1000, 500, 1400, 400 * n_rows]);
+t = tiledlayout(n_rows, n_materials, ...
+    'TileSpacing', 'none', ...
+    'Padding',     'compact');
+
+colors_xi = pub_colors;   % reuse pub palette for phi lines
+
+% =========================================================
+% Main loop
+% =========================================================
+for mat_idx = 1:n_materials
+    title_str = materials_epsr{mat_idx, 2};
+
+    % --- Allocate storage ---
+    Na_Es_xi_list = cell(1, numel(frequencies));
+    Na_Ea_xi_list = cell(1, numel(frequencies));
+    Na_Ee_xi_list = cell(1, numel(frequencies));
+
+    Es_xi_list = cell(1, numel(frequencies));
+    Ea_xi_list = cell(1, numel(frequencies));
+    Ee_xi_list = cell(1, numel(frequencies));
+
+    xi_rayleigh   = zeros(1, numel(frequencies));
+
+    % --- Compute Mie quantities for every frequency ---
+    for freq_idx = 1:numel(frequencies)
+        lambda = 3e8 / frequencies(freq_idx);
+        r_xi   = xi * lambda / (2 * pi);
+
+        if isnan(materials_epsr{mat_idx, 1})
+            [eps_p, eps_pp] = brine_parameters(T_brine_K, frequencies(freq_idx));
+            epsp = eps_p - 1j * eps_pp;
+        else
+            epsp = materials_epsr{mat_idx, 1} + ...
+                   compute_imag_permittivity(frequencies(freq_idx), materials_cond{mat_idx, 1});
+        end
+        epsb = eps_r_ice + compute_imag_permittivity(frequencies(freq_idx), sigma_ice);
+
+        % Rayleigh boundary: |n| * xi = 0.5  =>  xi_R = 0.5 / |n|
+        n_mag                 = abs(sqrt(epsp / epsb));
+        xi_rayleigh(freq_idx) = 0.5 / n_mag;
+
+        fprintf("[xi-plot] Material: %s | f = %.0f Hz\n", title_str, frequencies(freq_idx));
+        fprintf("  EPSP         : %s\n",   num2str(epsp));
+        fprintf("  EPSB         : %s\n",   num2str(epsb));
+        fprintf("  n            : %s\n",   num2str(sqrt(epsp / epsb)));
+        fprintf("  |n|          : %.4f\n", n_mag);
+        fprintf("  xi_Rayleigh  : %.4f\n", xi_rayleigh(freq_idx));
+        fprintf("  r range      : [%.3e, %.3e] m\n", r_xi(1), r_xi(end));
+
+        [Na_Es_xi_list{freq_idx}, ...
+         Na_Ea_xi_list{freq_idx}, ...
+         Na_Ee_xi_list{freq_idx}] = ...
+            compute_atten_rate(phi, r_xi, frequencies(freq_idx), epsb, epsp);
+
+        % FOR DEBUGGING
+        [Es_xi_list{freq_idx},...
+         Ea_xi_list{freq_idx},...
+         Ee_xi_list{freq_idx}] = ...
+            compute_scat_crossection(r_xi, frequencies(freq_idx), epsb, epsp);
+
+    end
+
+    % --- Build row list based on active flags ---
+    row_data   = {};
+    row_labels = {};
+    if plot_scattering_flag
+        row_data{end+1}   = Na_Es_xi_list;
+        row_labels{end+1} = 'Scattering (dB km^{-1})';
+    end
+    if plot_absorption_flag
+        row_data{end+1}   = Na_Ea_xi_list;
+        row_labels{end+1} = 'Absorption (dB km^{-1})';
+    end
+    if plot_extinction_flag
+        row_data{end+1}   = Na_Ee_xi_list;
+        row_labels{end+1} = 'Extinction (dB km^{-1})';
+    end
+
+    % --- Draw each row for this material column ---
+    for row = 1:n_rows
+        tile_idx = (row - 1) * n_materials + mat_idx;
+        ax = nexttile(tile_idx);
+        hold(ax, 'on');
+
+        is_last_row  = (row == n_rows);
+        is_first_col = (mat_idx == 1);
+        is_first_row = (row == 1);
+        is_last_col  = (mat_idx == n_materials);
+
+        data_list = row_data{row};
+        
+        grid(ax, 'on');
+        ax.GridColor          = [0.85 0.85 0.85];
+        ax.GridLineStyle      = '-';
+        ax.GridAlpha          = 1.0;
+        ax.MinorGridColor     = [0.92 0.92 0.92];
+        ax.MinorGridLineStyle = ':';
+        ax.MinorGridAlpha     = 1.0;
+        set(ax, 'XMinorGrid', 'on', 'YMinorGrid', 'on');
+
+        % --- Data lines (phi x frequency) ---
+        for j = 1:length(phi)
+            for k = 1:numel(frequencies)
+                Na = data_list{k};
+                if k == 1
+                    plot(ax, xi, Na(:, j), ...
+                         'Color',     pub_colors(j, :), ...
+                         'LineStyle', pub_linestyles{k}, ...
+                         'LineWidth', 1.4, ...
+                         'DisplayName', sprintf('\\phi = %.2f', phi(j)));
+                else
+                    plot(ax, xi, Na(:, j), ...
+                         'Color',     pub_colors(j, :), ...
+                         'LineStyle', pub_linestyles{k}, ...
+                         'LineWidth', 1.4, ...
+                         'HandleVisibility', 'off');
+                end
+            end
+        end
+
+        % --- Rayleigh boundary lines (one per frequency) ---
+        for k = 1:numel(frequencies)
+            xline(ax, xi_rayleigh(k), ...
+                  pub_linestyles{k}, ...
+                  'Color',              'k', ...
+                  'LineWidth',          1.0, ...
+                  'Alpha',              0.55, ...
+                  'HandleVisibility',   'off');
+        end
+
+        % --- Ice background attenuation reference ---
+        yline(ax, 5, '--', '5 dB km^{-1}', ...
+              'Color',                   [0.4 0.4 0.4], ...
+              'LineWidth',               0.9, ...
+              'LabelVerticalAlignment',  'bottom', ...
+              'LabelHorizontalAlignment','right', ...
+              'FontSize',                8, ...
+              'HandleVisibility',        'off');
+
+        % --- Axes config ---
+        set(ax, 'XScale',      'log', ...
+                'YScale',      'log', ...
+                'TickDir',     'out', ...
+                'TickLength',  [0.015 0.015], ...
+                'Box',         'on', ...
+                'Layer',       'top');
+        xlim(ax, [1e-3, 10]);
+        ylim(ax, [1e-5, 1e4]);
+
+        % --- X ticks: first col full range, others drop 10^-3 ---
+        if is_first_col
+            set(ax, 'XTick', [1e-3, 1e-2, 1e-1, 1e0, 1e1]);
+        else
+            set(ax, 'XTick', [1e-2, 1e-1, 1e0, 1e1]);
+        end
+
+        % --- X label: last row only ---
+        if is_last_row
+            xlabel(ax, 'k_s = 2\pir/\lambda', 'FontSize', 12);
+        else
+            set(ax, 'XTickLabel', {});
+        end
+
+        % --- Y label: first column only ---
+        if is_first_col
+            ylabel(ax, row_labels{row}, 'FontSize', 12);
+        else
+            set(ax, 'YTickLabel', {});
+        end
+
+        % --- Title: first row only ---
+        if is_first_row
+            title(ax, title_str, 'FontSize', 14, 'FontWeight', 'bold');
+        end
+
+        % --- Legend: first row, last column only ---
+        if is_first_row && is_last_col
+            % Frequency linestyle dummy entries
+            for k = 1:numel(frequencies)
+                plot(ax, nan, nan, ...
+                     'Color',       [0.15 0.15 0.15], ...
+                     'LineStyle',   pub_linestyles{k}, ...
+                     'LineWidth',   1.4, ...
+                     'DisplayName', freq_labels{k});
+            end
+            lg = legend(ax, ...
+                        'Location',  'northwest', ...
+                        'FontSize',  10, ...
+                        'Box',       'on', ...
+                        'EdgeColor', [0.7 0.7 0.7]);
+            lg.ItemTokenSize = [18, 9];
+        end
+
+        hold(ax, 'off');
+    end
+end
+
+% --- Shared x-axis label via tiledlayout ---
+xlabel(t, 'Size Parameter  k_s = 2\pir/\lambda', 'FontSize', 13);
+
+% =========================================================
+% Export
+% =========================================================
+if plot_scattering_flag && plot_absorption_flag && plot_extinction_flag
+    exportgraphics(gcf, 'mie_scattering_absorption_extinction_xiparam.png', 'Resolution', 200);
+elseif plot_scattering_flag && plot_absorption_flag
+    exportgraphics(gcf, 'mie_scattering_absorption_xiparam.png', 'Resolution', 300);
+elseif plot_scattering_flag && plot_extinction_flag
+    exportgraphics(gcf, 'mie_scattering_extinction_xiparam.png', 'Resolution', 300);
+elseif plot_absorption_flag && plot_extinction_flag
+    exportgraphics(gcf, 'mie_absorption_extinction_xiparam.png', 'Resolution', 300);
+elseif plot_scattering_flag
+    exportgraphics(gcf, 'mie_scattering_xiparam.png', 'Resolution', 300);
+elseif plot_absorption_flag
+    exportgraphics(gcf, 'mie_absorption_xiparam.png', 'Resolution', 300);
+else
+    exportgraphics(gcf, 'mie_extinction_xiparam.png', 'Resolution', 300);
+end
 
 
 %% --- Difference Plot: Brine minus Water ---
@@ -528,23 +779,53 @@ function eps_imag = compute_imag_permittivity(frequency, conductivity)
     eps_imag = -1j * conductivity / (omega * eps0);
 end
 
-function [Na, Es_vec] = compute_atten_rate(phi, r, f, epsb, epsp)
+function [Na_s, Na_a, Na_e] = compute_atten_rate(phi, r, f, epsb, epsp)
     if nargin < 4; epsb = 1.78^2; end
     if nargin < 5; epsp = 1;      end
 
     Es_vec = zeros(1, length(r));
+    Ea_vec = zeros(1, length(r));
+    Ee_vec = zeros(1, length(r));
+ 
     for n = 1:length(r)
-        [Es, ~, ~, ~] = Mie_scattering(r(n), f, epsp, epsb);
+        [Es, Ea, Ee, ~] = Mie_scattering_new(r(n), f, epsp, epsb);
         Es_vec(n) = Es;
+        Ea_vec(n) = Ea;
+        Ee_vec(n) = Ee;
     end
 
     V_particle = (4/3) * pi * r.^3;
     N          = phi ./ V_particle(:);
     Qs         = Es_vec .* pi .* r.^2;
+    Qa         = Ea_vec .* pi .* r.^2;
+    Qe         = Ee_vec .* pi .* r.^2;
     Qs_array   = repmat(Qs(:), 1, length(phi));
+    Qa_array   = repmat(Qa(:), 1, length(phi));
+    Qe_array   = repmat(Qe(:), 1, length(phi));
     alpha_s    = N .* Qs_array;
-    Na         = 10 * log10(exp(1)) * alpha_s * 1e3;
+    alpha_a    = N .* Qa_array;
+    alpha_e    = N .* Qe_array;
+    Na_s       = 10 * log10(exp(1)) * alpha_s * 1e3;
+    Na_a       = 10 * log10(exp(1)) * alpha_a * 1e3;
+    Na_e       = 10 * log10(exp(1)) * alpha_e * 1e3;
 end
+
+function [Es_vec, Ea_vec, Ee_vec] = compute_scat_crossection(r, f, epsb, epsp)
+    if nargin < 4; epsb = 1.78^2; end
+    if nargin < 5; epsp = 1;      end
+
+    Es_vec = zeros(1, length(r));
+    Ea_vec = zeros(1, length(r));
+    Ee_vec = zeros(1, length(r));
+ 
+    for n = 1:length(r)
+        [Es, Ea, Ee, ~] = Mie_scattering_new(r(n), f, epsp, epsb);
+        Es_vec(n) = Es;
+        Ea_vec(n) = Ea;
+        Ee_vec(n) = Ee;
+    end
+end
+
 
 function [eps_p, eps_pp] = brine_parameters(T, frequency)
     sigma          = brine_conductivity(T);

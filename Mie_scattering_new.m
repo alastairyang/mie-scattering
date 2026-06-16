@@ -1,4 +1,4 @@
-function [Es, Ea, Ee, Eb] = Mie_scattering(r, f, epsp, epsb)
+function [Es, Ea, Ee, Eb] = Mie_scattering_new(r, f, epsp, epsb)
 % Calculates the Mie scattering efficiency factors resulting from spherical
 % inclusions embedded in a medium.
 %
