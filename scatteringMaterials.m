@@ -8,14 +8,30 @@ eps_r_ice   = 3.15;      % real permittivity of ice
 eps_r_dust  = 8.8;       % real permittivity of dust (high dielectric rock)
 eps_r_water = 80.1;      % real permittivity of water at room temperature
 eps_r_air   = 1.00054;   % real permittivity of air
+eps_r_brine = 42;        % real permittivity of brine (deduced from Debye model)
 
 sigma_ice   = 10e-6;    % S/m, conductivity of pure ice
 sigma_dust  = 1.5e-3;   % S/m, conductivity of dust
 sigma_water = 400e-3;   % S/m, conductivity of water
 sigma_air   = 3e-15;    % S/m, conductivity of air
+sigma_brine = 11.67;    % S/m, conductivity of brine (effective sigma, deduced from the Debye model)
 
 % Brine temperature
 T_brine_K = 250;        % Kelvin
+
+% ---- Material tables ----
+% For brine: eps_r and sigma are placeholders (computed per-frequency inside loop)
+% sentinel value NaN flags "use brine_parameters()" instead of static values
+materials_epsr = {eps_r_brine, 'Brine';
+                  eps_r_water, 'Water';
+                  eps_r_dust,  'Dust';
+                  eps_r_air,   'Air'};
+materials_cond = {sigma_brine, 'Brine';
+                  sigma_water, 'Water';
+                  sigma_dust,  'Dust';
+                  sigma_air,   'Air'};
+
+n_materials = size(materials_epsr, 1);
 
 %% Example 1: Scattering Efficiency vs Pore Radius
 
@@ -64,7 +80,7 @@ disp(Ea_vec(2:10)');
 
 fprintf("The refractive index is: %d \n", m)
 
-%
+%% Specifying parameteric sweep
 r_sample_N = 1000;
 r = linspace(1e-3, 1, r_sample_N);
 % Porosity
@@ -78,248 +94,7 @@ frequencies = [f_1, f_10, f_100];
 freq_labels  = {'1 MHz', '10 MHz', '100 MHz'};
 linestyles   = {'-', '--', ':'};
 
-% ---- Material tables ----
-% For brine: eps_r and sigma are placeholders (computed per-frequency inside loop)
-% sentinel value NaN flags "use brine_parameters()" instead of static values
-materials_epsr = {NaN,         'Brine';
-                  eps_r_water, 'Water';
-                  eps_r_dust,  'Dust';
-                  eps_r_air,   'Air'};
-materials_cond = {NaN,         'Brine';
-                  sigma_water, 'Water';
-                  sigma_dust,  'Dust';
-                  sigma_air,   'Air'};
-
-n_materials = size(materials_epsr, 1);
-
-%% Example 2: Attenuation Rate for Different Materials at Three Frequencies
-% ---- Plot mode ----
-% 'radius'  → x-axis is scatterer radius in cm
-% 'xparam'  → x-axis is size parameter x = 2*pi*r/lambda
-plot_mode = 'radius';   % <-- change this to 'xparam' to switch
-
-% ========================================================
-
-figure('Position', [100, 100, 1400, 500]);
-colors = lines(length(phi));
-
-for mat_idx = 1:n_materials
-    ax = subplot(1, n_materials, mat_idx);
-    title_str = materials_epsr{mat_idx, 2};
-
-    Na_list    = cell(1, 3);
-    xaxis_list = cell(1, 3);   % store x-axis vector per frequency
-
-    for freq_idx = 1:numel(frequencies)
-        if isnan(materials_epsr{mat_idx, 1})
-            [eps_p, eps_pp] = brine_parameters(T_brine_K, frequencies(freq_idx));
-            epsp = eps_p - 1j * eps_pp;
-        else
-            epsp = materials_epsr{mat_idx,1} + ...
-                   compute_imag_permittivity(frequencies(freq_idx), materials_cond{mat_idx,1});
-        end
-        epsb = eps_r_ice + compute_imag_permittivity(frequencies(freq_idx), sigma_ice);
-
-        fprintf("Material: %s | f = %.0f Hz\n", title_str, frequencies(freq_idx));
-        fprintf("  EPSP: %s\n", num2str(epsp));
-        fprintf("  EPSB: %s\n", num2str(epsb));
-        m_ref = sqrt(epsp / epsb);
-        fprintf("  Refractive index: %s\n", num2str(m_ref));
-
-        [Na_list{freq_idx}, ~] = compute_atten_rate(phi, r, frequencies(freq_idx), epsb, epsp);
-
-        % Build x-axis vector for this frequency
-        if strcmp(plot_mode, 'xparam')
-            lambda = 3e8 / frequencies(freq_idx);   % wavelength in vacuum (m)
-            xaxis_list{freq_idx} = 2 * pi * r / lambda;
-        else
-            xaxis_list{freq_idx} = r * 1e2;         % radius in cm
-        end
-
-        if freq_idx == 1
-            fprintf("  Na(1): %s\n", num2str(Na_list{freq_idx}(1)));
-        end
-    end
-
-    % --- Plot ---
-    hold(ax, 'on');
-    for j = 1:length(phi)
-        for k = 1:3
-            Na    = Na_list{k};
-            xaxis = xaxis_list{k};
-
-            if k == 1
-                plot(ax, xaxis, Na(:, j), 'Color', colors(j,:), ...
-                     'LineStyle', linestyles{k}, 'LineWidth', 1.5, ...
-                     'DisplayName', sprintf('\\phi=%.2f', phi(j)));
-            else
-                plot(ax, xaxis, Na(:, j), 'Color', colors(j,:), ...
-                     'LineStyle', linestyles{k}, 'LineWidth', 1.5, ...
-                     'HandleVisibility', 'off');
-            end
-        end
-    end
-
-    % --- Axes config ---
-    ylim(ax, [1e-15, 1e4]);
-    if strcmp(plot_mode, 'xparam')
-        xlabel(ax, 'Size Parameter, x = 2\pir/\lambda');
-    else
-        xlabel(ax, 'Scatterer Radius (cm)');
-    end
-    if mat_idx == 1
-        ylabel(ax, 'Attenuation Rate (dB/km)');
-    end
-    grid(ax, 'on');
-    ax.GridLineStyle = '-';
-    title(ax, title_str);
-    set(ax, 'TickDir', 'in');
-
-    % Porosity legend (first call — only phi entries are in legend so far)
-    legend(ax, 'Location', 'southwest');
-
-    % Frequency dummy lines
-    for k = 1:3
-        plot(ax, nan, nan, 'k', 'LineStyle', linestyles{k}, ...
-             'LineWidth', 1.5, 'DisplayName', freq_labels{k});
-    end
-    legend(ax, 'Location', 'southeast');
-    set(gca,'XScale','log','YScale','log')
-
-    hold(ax, 'off');
-end
-
-% Build filename dynamically so you don't overwrite the wrong one
-if strcmp(plot_mode, 'xparam')
-    exportgraphics(gcf, 'mie_scattering_attenuation_xparam.png', 'Resolution', 300);
-else
-    exportgraphics(gcf, 'mie_scattering_attenuation.png', 'Resolution', 300);
-end
-
-%% ============================================================
-%  Normalized Size-Parameter Plot  (standalone block)
-%  X-axis: xi = 2*pi*r/lambda, swept from 1e-3 to 10
-%  For each frequency, physical r is back-computed from xi
-% =============================================================
-normalize_attenuation = false;   % true  → N_a · r  (dB/km · m)
-                                 % false → N_a      (dB/km)
-
-% ---- Sweep in size parameter space ----
-xi_sample_N = 1000;
-xi          = logspace(-3, 1, xi_sample_N);
-phi         = [0.01, 0.02, 0.05, 0.1, 0.20];
-
-figure('Position', [1000, 500, 1600, 400]);
-colors_xi = lines(length(phi));
-
-for mat_idx = 1:n_materials
-    ax        = subplot(1, n_materials, mat_idx);
-    title_str = materials_epsr{mat_idx, 2};
-
-    Na_xi_list     = cell(1, numel(frequencies));
-    lambda_list    = zeros(1, numel(frequencies));   % store lambda per freq
-
-    for freq_idx = 1:numel(frequencies)
-
-        % --- Back-compute physical r from xi ---
-        lambda_list(freq_idx) = 3e8 / frequencies(freq_idx);
-        r_xi = xi * lambda_list(freq_idx) / (2 * pi);
-
-        % --- Permittivities (real-only special case) ---
-        if isnan(materials_epsr{mat_idx, 1})
-            [eps_p, ~] = brine_parameters(T_brine_K, frequencies(freq_idx));
-            epsp = eps_p;
-        else
-            epsp = materials_epsr{mat_idx, 1};
-        end
-        epsb = eps_r_ice;
-
-        fprintf("[xi-plot] Material: %s | f = %.0f Hz\n", title_str, frequencies(freq_idx));
-        fprintf("  EPSP: %s\n",  num2str(epsp));
-        fprintf("  EPSB: %s\n",  num2str(epsb));
-        fprintf("  m   : %s\n",  num2str(sqrt(epsp / epsb)));
-        fprintf("  r range: [%.3e, %.3e] m\n", r_xi(1), r_xi(end));
-
-        [Na_xi_list{freq_idx}, ~] = compute_atten_rate(phi, r_xi, frequencies(freq_idx), epsb, epsp);
-    end
-
-    % --- Plot ---
-    hold(ax, 'on');
-    for j = 1:length(phi)
-        for k = 1:numel(frequencies)
-            Na      = Na_xi_list{k};
-            r_xi_k  = xi * lambda_list(k) / (2 * pi);   % (m), column after (:)
-
-            if normalize_attenuation
-                y_data = Na(:, j) .* r_xi_k(:);   % N_a · r  (dB/km · m)
-            else
-                y_data = Na(:, j);                 % N_a      (dB/km)
-            end
-
-            if k == 1
-                plot(ax, xi, y_data, ...
-                     'Color',            colors_xi(j, :), ...
-                     'LineStyle',        linestyles{k}, ...
-                     'LineWidth',        1.5, ...
-                     'DisplayName',      sprintf('\\phi=%.2f', phi(j)));
-            else
-                plot(ax, xi, y_data, ...
-                     'Color',            colors_xi(j, :), ...
-                     'LineStyle',        linestyles{k}, ...
-                     'LineWidth',        1.5, ...
-                     'HandleVisibility', 'off');
-            end
-        end
-    end
-
-    % --- Axes config ---
-    set(ax, 'XScale', 'log', 'YScale', 'log', 'TickDir', 'in');
-    xlim(ax, [1e-3, 10]);
-    if normalize_attenuation
-        ylim(ax, [1e-5, 1e4]);
-    else
-        ylim(ax, [1e-5, 1e4]);
-    end
-    grid(ax, 'on');
-    ax.GridLineStyle = '-';
-
-    xline(ax, 1, '--k', '\xi = 1', ...
-          'LabelVerticalAlignment', 'bottom', ...
-          'HandleVisibility',       'off');
-
-    xlabel(ax, 'Size Parameter  \xi = 2\pir/\lambda');
-    if mat_idx == 1
-        if normalize_attenuation
-            ylabel(ax, 'Normalized Attenuation  N_a \cdot r  (dB/km \cdot m)');
-        else
-            ylabel(ax, 'Attenuation Rate  N_a  (dB/km)');
-        end
-    end
-    title(ax, title_str);
-
-    % Porosity legend entries (already in legend from k==1 plots above)
-    legend(ax, 'Location', 'northwest');
-
-    % Frequency dummy lines
-    for k = 1:numel(frequencies)
-        plot(ax, nan, nan, 'k', ...
-             'LineStyle',  linestyles{k}, ...
-             'LineWidth',  1.5, ...
-             'DisplayName', freq_labels{k});
-    end
-    legend(ax, 'Location', 'northwest');
-
-    hold(ax, 'off');
-end
-
-% --- Export with descriptive filename ---
-if normalize_attenuation
-    exportgraphics(gcf, 'mie_xiparam_normalized.png', 'Resolution', 300);
-else
-    exportgraphics(gcf, 'mie_xiparam_raw.png',        'Resolution', 300);
-end
-
-%%
+%% ACTUAL PLOT IN THE MANUSCRIPT
 % =========================================================
 % Aesthetics / style config (set once before the mat loop)
 % =========================================================
@@ -380,13 +155,13 @@ for mat_idx = 1:n_materials
         lambda = 3e8 / frequencies(freq_idx);
         r_xi   = xi * lambda / (2 * pi);
 
-        if isnan(materials_epsr{mat_idx, 1})
-            [eps_p, eps_pp] = brine_parameters(T_brine_K, frequencies(freq_idx));
-            epsp = eps_p - 1j * eps_pp;
-        else
-            epsp = materials_epsr{mat_idx, 1} + ...
+%         if isnan(materials_epsr{mat_idx, 1})
+%             [eps_p, eps_pp] = brine_parameters(T_brine_K, frequencies(freq_idx));
+%             epsp = eps_p - 1j * eps_pp;
+%         else
+        epsp = materials_epsr{mat_idx, 1} + ...
                    compute_imag_permittivity(frequencies(freq_idx), materials_cond{mat_idx, 1});
-        end
+%         end
         epsb = eps_r_ice + compute_imag_permittivity(frequencies(freq_idx), sigma_ice);
 
         % Rayleigh boundary: |n| * xi = 0.5  =>  xi_R = 0.5 / |n|
@@ -472,23 +247,34 @@ for mat_idx = 1:n_materials
             end
         end
 
-        % --- Rayleigh boundary lines (one per frequency) ---
         for k = 1:numel(frequencies)
+            if is_first_row && is_first_col
+                label_str = sprintf('\\xi_R %s', freq_labels{k});
+            else
+                label_str = '';   % line still drawn, just no text
+            end
+        
             xline(ax, xi_rayleigh(k), ...
                   pub_linestyles{k}, ...
-                  'Color',              'k', ...
-                  'LineWidth',          1.0, ...
-                  'Alpha',              0.55, ...
-                  'HandleVisibility',   'off');
+                  'Color',                    'k', ...
+                  'LineWidth',                2.0, ...
+                  'Alpha',                    0.55, ...
+                  'Label',                    label_str, ...
+                  'LabelOrientation',         'aligned', ...
+                  'LabelVerticalAlignment',   'top', ...
+                  'LabelHorizontalAlignment', 'left', ...
+                  'FontSize',                 12, ...
+                  'HandleVisibility',         'off');
         end
+
 
         % --- Ice background attenuation reference ---
         yline(ax, 5, '--', '5 dB km^{-1}', ...
               'Color',                   [0.4 0.4 0.4], ...
-              'LineWidth',               0.9, ...
+              'LineWidth',               2.0, ...
               'LabelVerticalAlignment',  'bottom', ...
               'LabelHorizontalAlignment','right', ...
-              'FontSize',                8, ...
+              'FontSize',                12, ...
               'HandleVisibility',        'off');
 
         % --- Axes config ---
@@ -524,7 +310,7 @@ for mat_idx = 1:n_materials
 
         % --- Title: first row only ---
         if is_first_row
-            title(ax, title_str, 'FontSize', 14, 'FontWeight', 'bold');
+            title(ax, title_str, 'FontSize', 18, 'FontWeight','normal');
         end
 
         % --- Legend: first row, last column only ---
@@ -770,6 +556,25 @@ leg2 = legend('Location', 'northeast');
 title(leg2, 'Frequency');
 hold off;
 
+%% Effective dielectrics for brine
+T = 253.15; 
+sigma = brine_conductivity(T);
+freqs = [1e6,10e6,100e6];
+
+eps_all    = zeros(3,1);
+eps_p_all  = zeros(3,1);
+eps_pp_all = zeros(3,1);
+sigma_eff_all = zeros(3,1); 
+
+for ii = 1:numel(freqs)
+    [eps_p, eps_pp, eps_brine_debye] = brine_parameters(T, freqs(ii));
+    eps_all(ii) = eps_brine_debye;
+    [eps_p_all(ii), eps_pp_all(ii)] = decompose_permittivity(eps_all(ii), sigma, freqs(ii));
+    % compute the effective sigma
+    sigma_eff_all(ii) = imagi_eps_to_sigma(eps_pp_all(ii), freqs(ii));
+end
+
+%
 
 %% Helper Functions
 
@@ -827,7 +632,7 @@ function [Es_vec, Ea_vec, Ee_vec] = compute_scat_crossection(r, f, epsb, epsp)
 end
 
 
-function [eps_p, eps_pp] = brine_parameters(T, frequency)
+function [eps_p, eps_pp, eps_brine_debye] = brine_parameters(T, frequency)
     sigma          = brine_conductivity(T);
     eps_brine_debye = brine_permittivity(T, frequency);
     [eps_p, eps_pp] = decompose_permittivity(eps_brine_debye, sigma, frequency);
@@ -840,3 +645,10 @@ function [eps_prime, eps_double_prime] = decompose_permittivity(eps_debye, sigma
     eps_prime        =  real(eps_total);
     eps_double_prime = -imag(eps_total);
 end
+
+function sigma_eff = imagi_eps_to_sigma(eps_pp, frequency)
+    eps0    = 8.854187817e-12;
+    omega   = 2 * pi * frequency;
+    sigma_eff = eps_pp * (omega * eps0);
+end
+
