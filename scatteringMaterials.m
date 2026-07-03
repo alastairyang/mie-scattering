@@ -85,6 +85,8 @@ r_sample_N = 1000;
 r = linspace(1e-3, 1, r_sample_N);
 % Porosity
 phi = [0.01, 0.02, 0.05, 0.1, 0.20];
+% nondimensional size parameter
+xi = logspace(-3, 1, 200);
 
 % Frequencies
 f_1   = 1e6;    % Hz
@@ -249,7 +251,7 @@ for mat_idx = 1:n_materials
 
         for k = 1:numel(frequencies)
             if is_first_row && is_first_col
-                label_str = sprintf('\\xi_R %s', freq_labels{k});
+                label_str = sprintf('k_s %s', freq_labels{k});
             else
                 label_str = '';   % line still drawn, just no text
             end
@@ -296,7 +298,9 @@ for mat_idx = 1:n_materials
 
         % --- X label: last row only ---
         if is_last_row
-            xlabel(ax, 'k_s = 2\pir/\lambda', 'FontSize', 12);
+            xlabel(ax, '');
+            ax = gca;
+            ax.XAxis.FontSize = 14;
         else
             set(ax, 'XTickLabel', {});
         end
@@ -336,7 +340,7 @@ for mat_idx = 1:n_materials
 end
 
 % --- Shared x-axis label via tiledlayout ---
-xlabel(t, 'Size Parameter  k_s = 2\pir/\lambda', 'FontSize', 13);
+xlabel(t, 'Size Parameter  k_s = 2\pir/\lambda', 'FontSize', 20);
 
 % =========================================================
 % Export
