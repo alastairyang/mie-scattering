@@ -111,29 +111,37 @@ pub_colors = [
     0.416, 0.239, 0.604;   % purple
     0.180, 0.627, 0.173;   % green
 ];
-pub_linestyles    = {'-', '--', ':'};
-rayleigh_colors   = [
-    0.122, 0.471, 0.706;
-    0.890, 0.102, 0.110;
-    0.180, 0.627, 0.173;
-];
+pub_linestyles  = {'-', '--', ':'};
 
-set(groot, 'DefaultAxesFontName',  'Helvetica');
-set(groot, 'DefaultTextFontName',  'Helvetica');
-set(groot, 'DefaultAxesFontSize',  11);
-set(groot, 'DefaultAxesLineWidth', 0.8);
+% ── Global defaults ────────────────────────────────────────
+set(groot, 'DefaultAxesFontName',        'cmr10');     % <── Computer Modern Roman
+set(groot, 'DefaultTextFontName',        'cmr10');
+set(groot, 'DefaultAxesFontSize',        11);
+set(groot, 'DefaultAxesLineWidth',       0.8);
+set(groot, 'DefaultAxesTickDir',         'in');
+set(groot, 'DefaultAxesBox',             'on');
+set(groot, 'DefaultAxesColor',           'w');
+set(groot, 'DefaultFigureColor',         'w');
+set(groot, 'DefaultAxesGridColor',       [0.85 0.85 0.85]);
+set(groot, 'DefaultAxesGridLineStyle',   '-');
+set(groot, 'DefaultAxesGridAlpha',       1.0);
+set(groot, 'DefaultAxesMinorGridAlpha',  0.0);
+set(groot, 'DefaultAxesTickLabelInterpreter', 'latex');  % <── LaTeX tick labels
+set(groot, 'DefaultTextInterpreter',          'latex');  % <── LaTeX text
+set(groot, 'DefaultLegendInterpreter',        'latex');  % <── LaTeX legend
+set(groot, 'DefaultColorbarTickLabelInterpreter', 'latex');
 
 % =========================================================
 % Figure + tiled layout
 % =========================================================
 n_rows = plot_scattering_flag + plot_absorption_flag + plot_extinction_flag;
 
-figure('Position', [1000, 500, 1400, 400 * n_rows]);
-t = tiledlayout(n_rows, n_materials, ...
-    'TileSpacing', 'none', ...
-    'Padding',     'compact');
+figure('Position', [100, 100, 1400, 360 * n_rows], ...
+       'Color', 'w');
 
-colors_xi = pub_colors;   % reuse pub palette for phi lines
+t = tiledlayout(n_rows, n_materials, ...
+    'TileSpacing', 'compact', ...   % <── small but visible gap between panels
+    'Padding',     'compact');
 
 % =========================================================
 % Main loop
@@ -145,11 +153,9 @@ for mat_idx = 1:n_materials
     Na_Es_xi_list = cell(1, numel(frequencies));
     Na_Ea_xi_list = cell(1, numel(frequencies));
     Na_Ee_xi_list = cell(1, numel(frequencies));
-
-    Es_xi_list = cell(1, numel(frequencies));
-    Ea_xi_list = cell(1, numel(frequencies));
-    Ee_xi_list = cell(1, numel(frequencies));
-
+    Es_xi_list    = cell(1, numel(frequencies));
+    Ea_xi_list    = cell(1, numel(frequencies));
+    Ee_xi_list    = cell(1, numel(frequencies));
     xi_rayleigh   = zeros(1, numel(frequencies));
 
     % --- Compute Mie quantities for every frequency ---
@@ -157,16 +163,10 @@ for mat_idx = 1:n_materials
         lambda = 3e8 / frequencies(freq_idx);
         r_xi   = xi * lambda / (2 * pi);
 
-%         if isnan(materials_epsr{mat_idx, 1})
-%             [eps_p, eps_pp] = brine_parameters(T_brine_K, frequencies(freq_idx));
-%             epsp = eps_p - 1j * eps_pp;
-%         else
         epsp = materials_epsr{mat_idx, 1} + ...
                    compute_imag_permittivity(frequencies(freq_idx), materials_cond{mat_idx, 1});
-%         end
         epsb = eps_r_ice + compute_imag_permittivity(frequencies(freq_idx), sigma_ice);
 
-        % Rayleigh boundary: |n| * xi = 0.5  =>  xi_R = 0.5 / |n|
         n_mag                 = abs(sqrt(epsp / epsb));
         xi_rayleigh(freq_idx) = 0.5 / n_mag;
 
@@ -183,12 +183,10 @@ for mat_idx = 1:n_materials
          Na_Ee_xi_list{freq_idx}] = ...
             compute_atten_rate(phi, r_xi, frequencies(freq_idx), epsb, epsp);
 
-        % FOR DEBUGGING
-        [Es_xi_list{freq_idx},...
-         Ea_xi_list{freq_idx},...
+        [Es_xi_list{freq_idx}, ...
+         Ea_xi_list{freq_idx}, ...
          Ee_xi_list{freq_idx}] = ...
             compute_scat_crossection(r_xi, frequencies(freq_idx), epsb, epsp);
-
     end
 
     % --- Build row list based on active flags ---
@@ -196,15 +194,15 @@ for mat_idx = 1:n_materials
     row_labels = {};
     if plot_scattering_flag
         row_data{end+1}   = Na_Es_xi_list;
-        row_labels{end+1} = 'Scattering (dB km^{-1})';
+        row_labels{end+1} = 'Scattering (dB km$^{-1}$)';   % <── LaTeX superscript
     end
     if plot_absorption_flag
         row_data{end+1}   = Na_Ea_xi_list;
-        row_labels{end+1} = 'Absorption (dB km^{-1})';
+        row_labels{end+1} = 'Absorption (dB km$^{-1}$)';
     end
     if plot_extinction_flag
         row_data{end+1}   = Na_Ee_xi_list;
-        row_labels{end+1} = 'Extinction (dB km^{-1})';
+        row_labels{end+1} = 'Extinction (dB km$^{-1}$)';
     end
 
     % --- Draw each row for this material column ---
@@ -219,128 +217,140 @@ for mat_idx = 1:n_materials
         is_last_col  = (mat_idx == n_materials);
 
         data_list = row_data{row};
-        
-        grid(ax, 'on');
-        ax.GridColor          = [0.85 0.85 0.85];
-        ax.GridLineStyle      = '-';
-        ax.GridAlpha          = 1.0;
-        ax.MinorGridColor     = [0.92 0.92 0.92];
-        ax.MinorGridLineStyle = ':';
-        ax.MinorGridAlpha     = 1.0;
-        set(ax, 'XMinorGrid', 'on', 'YMinorGrid', 'on');
 
-        % --- Data lines (phi x frequency) ---
+        % ── Grid ──────────────────────────────────────────────
+        grid(ax, 'on');
+        ax.GridColor      = [0.85 0.85 0.85];
+        ax.GridLineStyle  = '-';
+        ax.GridAlpha      = 1.0;
+        set(ax, 'XMinorGrid', 'off', 'YMinorGrid', 'off');
+
+        % ── Data lines (phi × frequency) ──────────────────────
         for j = 1:length(phi)
             for k = 1:numel(frequencies)
                 Na = data_list{k};
                 if k == 1
                     plot(ax, xi, Na(:, j), ...
-                         'Color',     pub_colors(j, :), ...
-                         'LineStyle', pub_linestyles{k}, ...
-                         'LineWidth', 1.4, ...
-                         'DisplayName', sprintf('\\phi = %.2f', phi(j)));
+                         'Color',       pub_colors(j, :), ...
+                         'LineStyle',   pub_linestyles{k}, ...
+                         'LineWidth',   1.2, ...
+                         'DisplayName', sprintf('$\\phi = %.2f$', phi(j)));  % <── LaTeX
                 else
                     plot(ax, xi, Na(:, j), ...
-                         'Color',     pub_colors(j, :), ...
-                         'LineStyle', pub_linestyles{k}, ...
-                         'LineWidth', 1.4, ...
-                         'HandleVisibility', 'off');
+                         'Color',             pub_colors(j, :), ...
+                         'LineStyle',         pub_linestyles{k}, ...
+                         'LineWidth',         1.2, ...
+                         'HandleVisibility',  'off');
                 end
             end
         end
 
+        % ── Rayleigh boundary vertical lines ──────────────────
         for k = 1:numel(frequencies)
             if is_first_row && is_first_col
-                label_str = sprintf('k_s %s', freq_labels{k});
+                label_str = sprintf('$\\chi=$ %s', freq_labels{k});  % <── LaTeX k_s
             else
-                label_str = '';   % line still drawn, just no text
+                label_str = '';
             end
-        
+
             xline(ax, xi_rayleigh(k), ...
                   pub_linestyles{k}, ...
-                  'Color',                    'k', ...
-                  'LineWidth',                2.0, ...
-                  'Alpha',                    0.55, ...
+                  'Color',                    [0.2 0.2 0.2], ...
+                  'LineWidth',                1.4, ...
+                  'Alpha',                    0.7, ...
                   'Label',                    label_str, ...
                   'LabelOrientation',         'aligned', ...
                   'LabelVerticalAlignment',   'top', ...
                   'LabelHorizontalAlignment', 'left', ...
-                  'FontSize',                 12, ...
+                  'FontSize',                 10, ...
+                  'Interpreter',              'latex', ...   % <── LaTeX for xline label
                   'HandleVisibility',         'off');
         end
 
+        % ── 5 dB km⁻¹ reference line ──────────────────────────
+        yline(ax, 5, '--', '$5\ \mathrm{dB\ km}^{-1}$', ...  % <── LaTeX
+              'Color',                    [0.45 0.45 0.45], ...
+              'LineWidth',                1.2, ...
+              'LabelVerticalAlignment',   'bottom', ...
+              'LabelHorizontalAlignment', 'right', ...
+              'FontSize',                 10, ...
+              'Interpreter',              'latex', ...         % <── LaTeX for yline label
+              'HandleVisibility',         'off');
 
-        % --- Ice background attenuation reference ---
-        yline(ax, 5, '--', '5 dB km^{-1}', ...
-              'Color',                   [0.4 0.4 0.4], ...
-              'LineWidth',               2.0, ...
-              'LabelVerticalAlignment',  'bottom', ...
-              'LabelHorizontalAlignment','right', ...
-              'FontSize',                12, ...
-              'HandleVisibility',        'off');
+        % ── Axes configuration ─────────────────────────────────
+        set(ax, 'XScale',     'log', ...
+                'YScale',     'log', ...
+                'TickDir',    'in', ...
+                'TickLength', [0.012 0.012], ...
+                'Box',        'on', ...
+                'Layer',      'top', ...
+                'LineWidth',  0.8, ...
+                'TickLabelInterpreter', 'latex');             % <── LaTeX tick labels
 
-        % --- Axes config ---
-        set(ax, 'XScale',      'log', ...
-                'YScale',      'log', ...
-                'TickDir',     'out', ...
-                'TickLength',  [0.015 0.015], ...
-                'Box',         'on', ...
-                'Layer',       'top');
         xlim(ax, [1e-3, 10]);
         ylim(ax, [1e-5, 1e4]);
 
-        % --- X ticks: first col full range, others drop 10^-3 ---
+        % ── X ticks ───────────────────────────────────────────
         if is_first_col
             set(ax, 'XTick', [1e-3, 1e-2, 1e-1, 1e0, 1e1]);
         else
             set(ax, 'XTick', [1e-2, 1e-1, 1e0, 1e1]);
         end
 
-        % --- X label: last row only ---
+        % ── X tick labels: last row only ───────────────────────
         if is_last_row
-            xlabel(ax, '');
-            ax = gca;
-            ax.XAxis.FontSize = 14;
+            ax.XAxis.FontSize = 11;
         else
             set(ax, 'XTickLabel', {});
         end
 
-        % --- Y label: first column only ---
+        % ── Y tick labels: first column only ──────────────────
         if is_first_col
-            ylabel(ax, row_labels{row}, 'FontSize', 12);
+            ylabel(ax, row_labels{row}, ...
+                   'FontSize',   12, ...
+                   'FontWeight', 'normal', ...
+                   'Interpreter', 'latex');                   % <── LaTeX ylabel
         else
             set(ax, 'YTickLabel', {});
         end
 
-        % --- Title: first row only ---
+        % ── Column title: first row only ───────────────────────
         if is_first_row
-            title(ax, title_str, 'FontSize', 18, 'FontWeight','normal');
+            title(ax, title_str, ...
+                  'FontSize',    13, ...
+                  'FontWeight',  'normal', ...
+                  'Interpreter', 'latex');                    % <── LaTeX title
         end
 
-        % --- Legend: first row, last column only ---
+        % ── Legend: first row, last column only ───────────────
         if is_first_row && is_last_col
-            % Frequency linestyle dummy entries
             for k = 1:numel(frequencies)
                 plot(ax, nan, nan, ...
                      'Color',       [0.15 0.15 0.15], ...
                      'LineStyle',   pub_linestyles{k}, ...
-                     'LineWidth',   1.4, ...
-                     'DisplayName', freq_labels{k});
+                     'LineWidth',   1.2, ...
+                     'DisplayName', ['$' freq_labels{k} '$']);  % <── wrap in $ $
             end
+
             lg = legend(ax, ...
-                        'Location',  'northwest', ...
-                        'FontSize',  10, ...
-                        'Box',       'on', ...
-                        'EdgeColor', [0.7 0.7 0.7]);
-            lg.ItemTokenSize = [18, 9];
+                        'Location',    'northwest', ...
+                        'FontSize',    9.5, ...
+                        'Box',         'on', ...
+                        'EdgeColor',   [0.75 0.75 0.75], ...
+                        'Color',       'w', ...
+                        'Interpreter', 'latex');              % <── LaTeX legend
+            lg.ItemTokenSize = [16, 8];
         end
 
         hold(ax, 'off');
     end
 end
 
-% --- Shared x-axis label via tiledlayout ---
-xlabel(t, 'Size Parameter  k_s = 2\pir/\lambda', 'FontSize', 20);
+% ── Shared x-axis label ────────────────────────────────────
+xlabel(t, 'Normalized circumference, $\chi = 2\pi r / \lambda$', ...   % <── full LaTeX math label
+       'FontSize',    16, ...
+       'FontWeight',  'normal', ...
+       'Interpreter', 'latex');
 
 % =========================================================
 % Export
@@ -360,6 +370,7 @@ elseif plot_absorption_flag
 else
     exportgraphics(gcf, 'mie_extinction_xiparam.png', 'Resolution', 300);
 end
+
 
 
 %% --- Difference Plot: Brine minus Water ---
