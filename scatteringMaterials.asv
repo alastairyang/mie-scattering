@@ -526,11 +526,10 @@ for mat_idx = 1:n_materials
         ax = nexttile(tile_idx);
         hold(ax, 'on');
 
-        is_last_row   = (row == n_rows);
-        is_first_col  = (mat_idx == 1);
-        is_first_row  = (row == 1);
-        is_second_row = (row == 2);
-        is_last_col   = (mat_idx == n_materials);
+        is_last_row  = (row == n_rows);
+        is_first_col = (mat_idx == 1);
+        is_first_row = (row == 1);
+        is_last_col  = (mat_idx == n_materials);
 
         data_list = row_data{row};
 
@@ -585,32 +584,17 @@ for mat_idx = 1:n_materials
 
         % ── attenuation rate reference line ──────────────────────────
         for qq = 1:numel(alpha_ice)
-            if is_last_col
-                yline_str = ['$T = ' num2str(273.15 - ice_temperature_ref(qq)) '\,^\circ$C'];
-            else
-                yline_str = '';
-            end
-            yl = yline(ax, alpha_ice(qq), '--', yline_str, ...
-                  'Color',                    [0 0 0], ...
+            yline_str = ['T = ' num2str(ice_temperature_ref(qq)) ' deg C'];
+            yline(ax, alpha_ice(qq), '--', '$5\ \mathrm{dB\ km}^{-1}$', ... 
+                  'Color',                    [0.45 0.45 0.45], ...
                   'LineWidth',                1.2, ...
                   'LabelVerticalAlignment',   'bottom', ...
-                  'LabelHorizontalAlignment', 'left', ...
+                  'LabelHorizontalAlignment', 'right', ...
                   'FontSize',                 10, ...
-                  'Interpreter',              'latex', ...
+                  'Interpreter',              'latex', ...        
                   'HandleVisibility',         'off');
-            
-%             if is_last_col && ~isempty(yline_str)
-%                 drawnow;  % force render so the text object exists
-%                 txt = findobj(yl, 'Type', 'Text');
-%                 if ~isempty(txt)
-%                     set(txt, 'Clipping', 'off');
-%                     set(txt, 'Position', [ax.XLim(2) * 1.02, alpha_ice(qq), 0]);
-%                 end
-%             end
 
-
-
-        end
+            e 
         % ── Axes configuration ─────────────────────────────────
         set(ax, 'XScale',     'log', ...
                 'YScale',     'log', ...
@@ -624,16 +608,16 @@ for mat_idx = 1:n_materials
         xlim(ax, [1e-3, max(r)]);
         ylim(ax, [1e-1, 1e4]);
 
-        % ── X ticks ───────────────────────────────────────────
+%         % ── X ticks ───────────────────────────────────────────
 %         if is_first_col
-            set(ax, 'XTick', [1e-3, 1e-2, 1e-1, 1e0, 1e1]);
+%             set(ax, 'XTick', [1e-3, 1e-2, 1e-1, 1e0, 1e1]);
 %         else
 %             set(ax, 'XTick', [1e-2, 1e-1, 1e0, 1e1]);
 %         end
 
         % ── X tick labels: last row only ───────────────────────
         if is_last_row
-            ax.XAxis.FontSize = 16;
+            ax.XAxis.FontSize = 11;
         else
             set(ax, 'XTickLabel', {});
         end
@@ -643,8 +627,7 @@ for mat_idx = 1:n_materials
             ylabel(ax, row_labels{row}, ...
                    'FontSize',   16, ...
                    'FontWeight', 'normal', ...
-                   'Interpreter', 'latex');   
-            ax.YAxis.FontSize = 16;
+                   'Interpreter', 'latex');                 
         else
             set(ax, 'YTickLabel', {});
         end
@@ -657,8 +640,8 @@ for mat_idx = 1:n_materials
                   'Interpreter', 'latex');                   
         end
 
-        % ── Legend: second row, last column only ───────────────
-        if is_second_row && is_last_col
+        % ── Legend: first row, last column only ───────────────
+        if is_first_row && is_last_col
             for k = 1:numel(frequencies)
                 plot(ax, nan, nan, ...
                      'Color',       [0.15 0.15 0.15], ...
@@ -668,7 +651,7 @@ for mat_idx = 1:n_materials
             end
 
             lg = legend(ax, ...
-                        'Location',    'northeast', ...
+                        'Location',    'northwest', ...
                         'FontSize',    9.5, ...
                         'Box',         'on', ...
                         'EdgeColor',   [0.75 0.75 0.75], ...
@@ -683,7 +666,7 @@ end
 
 % ── Shared x-axis label ────────────────────────────────────
 xlabel(t, 'Inclusion Radius, $a$ (m)', ...   % <── full LaTeX math label
-       'FontSize',    20, ...
+       'FontSize',    18, ...
        'FontWeight',  'normal', ...
        'Interpreter', 'latex');
 
